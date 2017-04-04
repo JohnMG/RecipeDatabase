@@ -1,0 +1,745 @@
+-- High Distinction, Spring 2016
+-- Author: John Massy-Greene jmassygreene@hotmail.com
+-- Begin Date: 22/09/2016
+-- Last edit: 4/10/2016
+--
+-- Program Description: This is a schema for a recipe database 
+--                      and it contains the following tables:
+-- 
+-- UserTypes 
+-- 
+-- this is a table that defines the level of access any
+-- particular user has with the database. it states their 
+-- priviledges and what they are allowed to do within the
+-- database. There are four roles. Super Admin, Admin, Regular 
+-- and Guest. Each corresponds to a number from 1 to 4.
+--
+-- Users
+--
+-- This is the table where we store information about users. 
+-- User are the people who input recipes into the database for 
+-- storage, safekeeping and generally so they can share their 
+-- creations with other. At this stage of the database we only 
+-- wish to store their userID, names, passwords and userType.
+-- please note for demonstration purposes the names in the 
+-- insert statements are friends of the programmer who 
+-- consented to being associated with the database. 
+--
+-- Recipe
+-- 
+-- the reason for the database. This stores the various 
+-- meta-information about the recipe including: the title,
+-- time to make it, source(where the user found the recipe 
+-- or adapted theirs from), extra notes and possible 
+-- allergen information. With the use of triggers recipes
+-- could be entered and then checked to make sure that the
+-- user entering it was not a guest.
+--
+-- Picture
+-- 
+-- This table stores the locations of pictures of recipes 
+-- in a computer. Pictures are useful for showing others
+-- what the end product should look like or using a pictorial
+-- guide throughout the recipe. For demonstration purposes 
+-- we've included possible locations where a webserver might
+-- look for pictures when trying to display them.
+--
+-- Component
+--
+-- Some recipe are combinations of multiple recipes. This
+-- table shows the recipes and the steps to build the 
+-- final product
+--
+-- Ingredient
+-- 
+-- In order to create a recipe, ingredients are required. 
+-- This table stores the allergen information, metric to
+-- cups conversion guide and name.
+--
+--
+-- Substitution
+--
+-- Sometimes people don't have the exact ingredients 
+-- they require for a recipe. With a bit of ingenuity
+-- you can recreate the recipe with different 
+-- ingredients that have the same result. This table stores 
+-- substitutions that are particular to 1 recipe as well as 
+-- substitutions that can be used for all recipes
+--
+-- Contains
+--
+-- Recipes can have many ingredients and ingredients can 
+-- be in many recipes. This table keeps track of what 
+-- recipe use what ingredients.
+--
+-- Allergen Information:
+--
+-- In both the recipe and ingredient table, the following 
+-- allergies are described:
+--
+-- * gfLevel(Gluten Free Level - 1 is completely gluten free
+--                               2 is unsure
+--                               3 is not gluten free
+-- * vegLevel(Vegan/Vegetarian) - 1 = Vegan
+--                                2 = Vegetarian
+--                                3 = Only for people who 
+--                                    eat meat
+-- * nutFree - This is a boolean. Free of nuts or not
+-- * dairyFree - This is a boolean. Dairy free or not
+-- 
+-- I orginally wanted to make the recipe table dependent
+-- on the ingredient table for its allergen values via 
+-- the use of triggers. Instead I have used an extensive
+-- amount of views which could be used to double check 
+-- whether a recipe has the correct allergen values. 
+-- I have kept the columns in the recipe table and 
+-- filled them out manually since I plan to use this 
+-- database in future.
+--                     
+--
+--
+
+
+
+drop view recipeAllergyMatrix;
+drop view recipeDairy;
+drop view recipeNuts;
+drop view recipeVLevel;
+drop view recipeGF;
+drop view jointallergens;
+drop table contains;
+drop table substitution;
+drop table ingredient;
+drop table component;
+drop table picture;
+drop table recipe;
+drop table users;
+drop table userTypes;
+
+
+create table userTypes (
+	type int,
+	role text NOT NULL,
+	description text,
+
+	CONSTRAINT utTable_PK PRIMARY KEY(type),
+	CONSTRAINT UtTable_limitRoles 
+                 CHECK (type >= 1 and type <= 4)
+);
+
+create table users (
+	uID int,
+	name text NOT NULL,
+	password varchar(50) NOT NULL,
+	type int,
+
+	CONSTRAINT user_PK PRIMARY KEY(uID),
+	CONSTRAINT user_FK FOREIGN KEY(type) 
+			REFERENCES userTypes(type) ON DELETE RESTRICT
+);
+
+create table recipe (
+	recID int,
+	uID int,
+	title text NOT NULL,
+	instructions text,
+	time int,
+	notes text,
+	source text,
+	hasComponents BOOLEAN NOT NULL,
+	gfLevel int,
+	vegLevel int,
+	nutfree BOOLEAN,
+	dairyfree BOOLEAN,
+
+	CONSTRAINT rec_PK PRIMARY KEY(recID),
+	CONSTRAINT rec_FK FOREIGN KEY(uID)
+     		REFERENCES users(uID) ON DELETE CASCADE,
+	
+	CONSTRAINT rec_gflevel 
+	     CHECK((gfLevel >= 1 AND gfLevel <= 3) OR NULL),
+	
+	CONSTRAINT rec_veglevel 
+          CHECK((vegLevel >= 1 AND vegLevel <= 3) OR NULL)
+
+);
+
+create table picture (
+	link text,
+	recID int,
+	descriptor varchar(140),
+
+	CONSTRAINT pic_PK PRIMARY KEY(link),
+	CONSTRAINT pic_FK FOREIGN KEY(recID) 
+	REFERENCES recipe(recID) ON DELETE CASCADE
+);
+
+create table component (
+	mainID int,
+	compID int,
+	step int NOT NULL,
+	
+	CONSTRAINT comp_PK PRIMARY KEY(mainID, compID),
+	CONSTRAINT comp_FK1 FOREIGN KEY(mainID) 
+			REFERENCES recipe(recID) ON DELETE CASCADE,
+	
+	CONSTRAINT comp_FK2 FOREIGN KEY(compID)
+			REFERENCES recipe(recID) ON DELETE RESTRICT,
+	
+	CONSTRAINT comp_step CHECK(step > 0)
+);
+
+
+create table ingredient (
+	iname text,
+	metricToCup float,
+	gfLevel int NOT NULL,
+	vegLevel int NOT NULL,
+	nutfree BOOLEAN NOT NULL,
+	dairyfree BOOLEAN NOT NULL,
+	
+	CONSTRAINT ingred_PK PRIMARY KEY(iname),
+	CONSTRAINT ingred_cup CHECK(metricToCup > 0),
+	CONSTRAINT ingred_gfLevel 
+			CHECK(gfLevel >= 1 and gfLevel <= 3),
+	
+	CONSTRAINT ingred_vegLevel 
+			CHECK(vegLevel >= 1 and vegLevel <= 3)
+);
+
+create table substitution (
+	mainIngred text,
+	subIngred text,
+	recipe int,
+	notes text,
+	
+	CONSTRAINT sub_PK PRIMARY KEY(mainIngred, 
+						   subIngred, recipe),
+	
+	CONSTRAINT sub_FK1 FOREIGN KEY(mainIngred)
+			REFERENCES ingredient(iname) ON DELETE CASCADE,
+	
+	CONSTRAINT sub_FK2 FOREIGN KEY(subIngred)
+			REFERENCES ingredient(iname)ON DELETE CASCADE,
+	
+	CONSTRAINT sub_FK3 FOREIGN KEY(recipe) 
+			REFERENCES recipe(recID) ON DELETE CASCADE
+);
+
+create table contains (
+	recID int,
+	iname text,
+	amount float NOT NULL,
+	unit varchar(10),
+	cups boolean NOT NULL,
+	
+	CONSTRAINT contain_PK PRIMARY KEY(recID, iname),
+	CONSTRAINT contain_FK1 FOREIGN KEY(recID)
+			REFERENCES recipe(recID) ON DELETE CASCADE,
+	
+	CONSTRAINT contain_FK2 FOREIGN KEY(iname)
+			REFERENCES ingredient(iname) ON DELETE RESTRICT,
+	
+	CONSTRAINT contain_amount CHECK(amount > 0),
+	CONSTRAINT contain_unit1 CHECK
+				((cups is TRUE AND unit IS NULL) OR
+				(cups is FALSE and unit IS NOT NULL)),
+	
+	CONSTRAINT contain_unit2 CHECK(unit IN 
+					('ml',
+				 	'l', 
+					'mg', 
+					'g', 
+					'kg',
+					'unit(s)',
+					'tspn', 
+					'tbspn',
+					'lb',
+					'oz'))
+);
+
+create view jointAllergens AS
+select recID, iname, gfLevel, vegLevel, nutfree, dairyfree
+from contains natural join ingredient;
+
+create view recipeGF AS
+select recID, max(gfLevel) as gfLevel
+from jointAllergens
+group by recID;
+
+create view recipeVLevel AS
+select recID, max(vegLevel) as vegLevel
+from jointAllergens
+group by recID;
+
+create view recipeNuts AS
+select recID, bool_and(nutfree) as nutFree
+from jointAllergens
+group by recID;
+
+create view recipeDairy AS
+select recID, bool_and(dairyfree) as dairyfree 
+from jointAllergens
+group by recID;
+
+create view recipeAllergyMatrix AS
+SELECT a.recID, a.title, b.gfLevel, c.vegLevel, 
+	  d.nutFree, e.dairyfree
+from recipe as a, recipeGF as b, recipeVLevel as c,
+	  recipeNuts as d, recipeDairy as e
+where a.recID = b.recID and a.recID = c.recID AND
+	 a.recID = d.recID and a.recID = e.recID;
+
+-------------------------------------------------------------
+-- Schema is above this line
+-- Insert values are below this line
+-------------------------------------------------------------
+
+INSERT into userTypes values (1, 'Super Admin', 
+'This role has access to all priviledges');
+
+INSERT into userTypes values (2, 'Admin', 
+'User can read all tables, write their own recipes
+ and add or delete users, except admins');
+
+INSERT into userTypes values (3, 'Regular',
+'Can read all tables(except users and userTypes) and
+ write their own recipes and upload pictures');
+
+INSERT into userTypes values (4, 'Guest', 
+'Can only read all tables(except users and userTypes)');
+
+
+INSERT INTO users VALUES(1, 'John Massy-Greene', 'sexbomb', 1);
+INSERT INTO users VALUES(2, 'Kat Goh','ameizing', 2);
+INSERT INTO users VALUES(3, 'Jax Arnold' ,'gremlin', 2);
+INSERT INTO users VALUES(4, 'Andrew Lem', 'banana', 3);
+INSERT INTO users VALUES(5, 'Joshua Ching', 'iheartPi', 3);
+INSERT INTO users VALUES(6, 'Rae Ho', 'tsundere', 4);
+INSERT INTO users VALUES(7, 'Andrew Czeizler', 'somuchmoney',4);
+
+INSERT INTO ingredient VALUES('unsalted butter',
+					   225, 1, 2, True, False);
+INSERT INTO ingredient VALUES('brown sugar',
+					   200, 1, 1, True, True);
+INSERT INTO ingredient VALUES('white sugar',
+					   225, 1, 1, True, True);
+INSERT INTO ingredient VALUES('palm sugar',
+					   250, 1, 1, True, True);
+INSERT INTO ingredient VALUES('icing sugar',
+					   125, 1, 1, True, True); 
+INSERT INTO ingredient VALUES('whole milk',
+					   240, 1, 2, True, False);
+INSERT INTO ingredient VALUES('coconut milk',
+					   240, 1, 1, True, True);
+INSERT INTO ingredient VALUES('shredded coconut',
+					   93, 1, 1, True, True);
+INSERT INTO ingredient VALUES('pandan juice',
+					   240, 1, 1, True, True);
+INSERT INTO ingredient VALUES('cream',
+					   240, 1, 2, True, False);
+INSERT INTO ingredient VALUES('AP flour',
+					   125,  3, 1, True, True);
+INSERT INTO ingredient VALUES('SF flour',
+					   125, 3, 1, True, True );
+INSERT INTO ingredient VALUES('rice flour',
+					   150, 1, 1, True, True);
+INSERT INTO ingredient VALUES('sweet rice flour',
+					   150, 1, 1, True, True);
+INSERT INTO ingredient VALUES('tapioca flour',
+					   125, 1,1, True, True);
+INSERT INTO ingredient VALUES('almond flour',
+					   125, 1,1, false, true); 
+INSERT INTO ingredient VALUES('salt',
+					   NULL, 1, 1, True, True);
+INSERT INTO ingredient VALUES('sea salt',
+					   NULL, 1, 1, True, True);
+INSERT INTO ingredient VALUES('baking soda',
+					   NULL, 2, 1, True, True);
+INSERT INTO ingredient VALUES('baking powder',
+					   NULL, 2, 1, True, True);
+INSERT INTO ingredient VALUES('vanilla pod',
+					   NULL, 1, 1, True, True);
+INSERT INTO ingredient VALUES('vanilla extract',
+					   NULL, 2, 1, True, True);
+INSERT INTO ingredient VALUES('cinnamon',
+					   NULL, 1, 1, True, True);
+INSERT INTO ingredient VALUES('dark chocolate',
+					   175, 2, 2, False, False );
+INSERT INTO ingredient VALUES('white chocolate',
+					   175, 2, 2, False, False);
+INSERT INTO ingredient VALUES('milk chocolate',
+					   175, 2, 2, False, False);
+INSERT INTO ingredient VALUES('cacao',
+					   112, 1, 1, True, True);
+INSERT INTO ingredient VALUES('rolled oats',
+					   90, 2,1, True, True);
+INSERT INTO ingredient VALUES('watermelon',
+					   152, 1, 1, True, True);
+INSERT INTO ingredient VALUES('egg',
+					   NULL, 1, 2, True, True);
+INSERT INTO ingredient VALUES('egg yolk',
+					   NULL, 1, 2, True, True);
+INSERT INTO ingredient VALUES('egg white',
+					   NULL, 1, 2, True, True);
+INSERT INTO ingredient VALUES('baileys',
+					   240, 2, 2, false, false);
+INSERT INTO ingredient VALUES('frangelico',
+					   240, 2, 2, false, false);
+INSERT INTO ingredient VALUES('rum',
+					   240, 1, 1, true, true);
+INSERT INTO ingredient VALUES('peanut butter',
+					   250, 1, 1, false, true);
+INSERT INTO ingredient VALUES('rhubarb',
+					   100, 1, 1,true,true);
+INSERT INTO ingredient VALUES('strawberry',
+					   200, 1, 1,true,true);
+INSERT INTO ingredient VALUES('corn starch',
+					   NULL, 1, 1,true,true);
+INSERT INTO ingredient VALUES('water',
+					   240, 1, 1, true, true);
+INSERT INTO ingredient VALUES('hazelnut',
+					   150, 1, 1, false, true);
+INSERT INTO ingredient VALUES('cream of tartar',
+					   NULL, 1, 1, true, true);
+INSERT INTO ingredient VALUES('lemon',
+					   NULL, 1, 1, true, true);
+INSERT INTO ingredient VALUES('apple',
+					   NULL, 1, 1, true, true);
+
+INSERT INTO recipe VALUES(0, 1, 'ALL RECIPES',
+NULL, NULL, NULL, NULL, FALSE, NULL, NULL, NULL, NULL);
+
+INSERT INTO recipe VALUES(1, 5,'Easy Watermelon Treat',
+'Slice the watermelon into cubes sprinkle sea salt and serve',
+5, 'So easy the dog can make it', NULL, FALSE, 1, 1, true, true);
+
+INSERT INTO contains VALUES(1, 'watermelon', 1, NULL, TRUE);
+INSERT INTO contains VALUES(1, 'sea salt', 5, 'g', FALSE);
+
+INSERT INTO recipe VALUES(2, 1, 'Baileys Cookies',
+'1. Cream butter and sugar together till light and fluffy
+ 2. Add egg, vanilla and 8 tablespoons of baileys
+ 3. Sift in salt, baking powder and flour and mix until 
+    just incorporated
+ 4. Preheat oven to 350F and leave dough in refridgerator 
+    for one hour
+ 5. Bake for 10 minutes until just brown',
+90, NULL, 'www.flickr.com - user: sugarbliisgnome',
+FALSE, 3, 2, FALSE, FALSE);
+
+INSERT INTO contains VALUES(2, 'unsalted butter', 
+					 227, 'g', FALSE);
+INSERT INTO contains VALUES(2, 'white sugar', 
+					 200, 'g', FALSE );
+INSERT INTO contains VALUES(2, 'egg', 1, 'unit(s)', FALSE);
+INSERT INTO contains VALUES(2, 'vanilla extract',
+					 1, 'tspn', FALSE);
+INSERT INTO contains VALUES(2, 'baileys', 8, 'tbspn', FALSE);
+INSERT INTO contains VALUES(2, 'salt', 2.5, 'g', FALSE);
+INSERT INTO contains VALUES(2, 'AP flour', 375, 'g', FALSE);
+INSERT INTO contains VALUES(2, 'baking powder', 
+					 1, 'tspn', FALSE);
+
+
+INSERT INTO recipe VALUES(3, 1, 'Choc Chunk Cookies GF',
+'1. Sift together rice flour, almond flour, 
+    salt and baking Soda
+ 2. Cream together butter and both sugars 
+    until well blended
+ 3. Beat in vanilla pod, milk, egg and egg yolk
+ 4. Mix dry ingredients and wet ingredients together
+ 5. Chop the dark chocolate into rough chunks 
+    and mix throughout batter
+ 6. Refridgerate dough for 1 hour and preheat oven to 170 C
+ 7. Bake for 17 minutes and let cool completely.',
+100, 'Heavily modified from original non GF recipe',
+'http://allrecipes.com', FALSE, 1, 2, FALSE, FALSE);
+
+INSERT INTO contains VALUES(3, 'sweet rice flour', 170, 'g',
+					 FALSE);
+INSERT INTO contains VALUES(3, 'almond flour',125, 'g',  FALSE);
+INSERT INTO contains VALUES(3, 'baking soda', 2.5, 'g', FALSE);
+INSERT INTO contains VALUES(3, 'whole milk', 40, 'ml', FALSE);
+INSERT INTO contains VALUES(3, 'salt', 3, 'g', FALSE);
+INSERT INTO contains VALUES(3, 'unsalted butter', 170, 'g',
+					 FALSE);
+INSERT INTO contains VALUES(3, 'brown sugar', 170, 'g', FALSE);
+INSERT INTO contains VALUES(3, 'white sugar', 100, 'g', FALSE);
+INSERT INTO contains VALUES(3, 'vanilla pod', 1, 'unit(s)',
+					 FALSE);
+INSERT INTO contains VALUES(3, 'egg yolk', 1, 'unit(s)', FALSE);
+INSERT INTO contains VALUES(3, 'egg', 1, 'unit(s)', FALSE);
+INSERT INTO contains VALUES(3, 'dark chocolate', 350, 'g',
+					 FALSE);
+
+INSERT INTO recipe VALUES(4, 2, 'Onde Onde',
+'1. Combine rice flour with pandan juice and kneed
+ 2. Combine shredded coconut and salt and steam for
+    20 minutes
+ 3. Take small piece of dough and push palm sugar
+    into the center
+ 4. Drop into boiling water. When dough rises to surface
+    take it out
+ 5. Roll the ball in the coconut and let cool',  
+30, 'recipe can be made quickly and by agak agak', 
+NULL, FALSE, 1, 1, TRUE, TRUE);
+
+INSERT INTO contains VALUES(4, 'sweet rice flour', 250, 'g', 
+					 FALSE);
+INSERT INTO contains VALUES(4, 'pandan juice', 200, 'ml', 
+					 FALSE);
+INSERT INTO contains VALUES(4, 'palm sugar', 150, 'g',
+					 FALSE);
+INSERT INTO contains VALUES(4, 'shredded coconut', 100, 'g', 
+					 FALSE);
+INSERT INTO contains VALUES(4, 'salt', 2, 'g', FALSE);
+
+INSERT INTO recipe VALUES(5, 1,
+'3-Ingediant Peanut Butter Cookies', 
+'1. Preheat oven to 350F 
+ 2. Beat egg with whisk
+ 3. Mix egg, peanut butter and sugar until fully incorporated
+    and smooth
+ 4. Roll dough into dough into small balls and bake for
+    10-12 minutes',
+20, 'Adding cranberries really makes this great',
+'www.epicurious.com', 
+FALSE, 1, 2, FALSE, FALSE);
+
+INSERT INTO contains VALUES(5, 'peanut butter', 1, NULL, TRUE);
+INSERT INTO contains VALUES(5, 'white sugar', 1, NULL, TRUE);
+INSERT INTO contains VALUES(5, 'egg' , 1, 'unit(s)', FALSE);
+
+INSERT INTO recipe VALUES(6, 2, 'Alice\'s House Truffles 4.0',
+'1. Put egg yolks in a bain marie and heat until lukewarm
+ 2. Put butter, chocolate and salt in another bain marie and 
+    stir till melted
+ 3. Bring half cup of water to boil and poor steadily into
+    egg yolks.
+    make sure to be mixing the entire time.
+ 4. Pour mixture through strainer into chocolate mixture.
+ 5. Let mixture cool and refridgerate until firm.
+ 6. Shape the truffles and roll them in the cocoa powder.',
+180,'ONLY USE FRESH EGGS', 'https://food52.com',
+FALSE,  2, 2, FALSE, FALSE);
+
+INSERT INTO contains VALUES(6, 'egg', 2, 'unit(s)', FALSE);
+INSERT INTO contains VALUES(6, 'dark chocolate', 1, 'lb',
+				      FALSE);
+INSERT INTO contains VALUES(6, 'unsalted butter',10, 'tbspn',
+					 FALSE);
+INSERT INTO contains VALUES(6, 'salt', 0.125, 'tspn', FALSE);
+INSERT INTO contains VALUES(6, 'cacao', 0.3, NULL, TRUE);
+
+INSERT INTO recipe VALUES(7, 4, 'Rhubarb Strawberry Pie',
+'1. Prepare the pie crust according to to the associated 
+    recipe.
+ 2. Prepare the filling ingredients
+ 3. Roll out 1 dough disk(12 inches) on lightly floured
+    surface. Transfer to pie dish
+ 4. Pour filling into the crust
+ 5. Roll out another disk and cut 1 inch wide strips
+ 6. Weave strips on top of the filling in a latice formation
+ 7. Press the edges of the pie firmly together
+ 8. Bake for 15 minute at 425F. Turn the temperature down
+    to 375F and bake 35 minutes more',
+80, 'Modified from original recipe', 
+'www.bakepedia.com/rhubarb-pie-with-latice-crust-recipe',
+TRUE, 3, 2, TRUE, FALSE);
+
+INSERT INTO recipe VALUES(8, 4, 'Double Pie Crust',
+'1. Sift flour and salt in bowl
+ 2. Add butter and kneed together until mixture
+    resembles fine bread crumbs
+ 3. Drizzle water until mixture just holds together.
+ 4. Seperate into 2 balls and flatten each one. 
+    Wrap in plastic wrap and put in fridge', 
+15, NULL, 'www.bakepedia.com/pie-crust-recipe',
+FALSE, 3, 2, TRUE, FALSE);
+
+INSERT INTO contains VALUES(8, 'AP flour', 2.5, NULL, true);
+INSERT INTO contains VALUES(8, 'salt', 0.5, 'tspn', false);
+INSERT INTO contains VALUES(8, 'unsalted butter', 1, NULL, 
+					 true);
+INSERT INTO contains VALUES(8, 'water', 6, 'tbspn', false);
+
+INSERT INTO component values(7,8,1);
+
+INSERT INTO recipe VALUES(9, 5, 'Hazlenut Crust',
+'1. Finely grind the hazlenuts
+ 2. Mix flour, icing sugar and butter until it
+    resembles breadcrumbs
+ 3. Add egg yolk and 1-2 tablespoons of cold water
+ 4. Flatten into a disc and chill for 30 minutes
+ 5. Bake at 180C for 20 minutes',
+40, NULL, NULL, FALSE, 3, 2, FALSE, FALSE);
+
+INSERT INTO contains VALUES(9, 'hazelnut',50, 'g',false);
+INSERT INTO contains VALUES(9, 'AP flour', 200, 'g', false );
+INSERT INTO contains VALUES(9, 'icing sugar', 1, 'tspn', false);
+INSERT INTO contains VALUES(9, 'unsalted butter', 140, 'g', 
+					 false);
+INSERT INTO contains VALUES(9, 'egg yolk', 1, 'unit(s)', false);
+
+INSERT INTO recipe VALUES(10, 5, 'Simple Salted Caramel',
+'1. Add sugar and water into a heavy sauce pan over a stove at 
+    medium heat
+ 2. Cook until the sugar dissolves and caramel becomes a
+    golden color
+ 3. Remove from heat and add the heavy cream
+ 4. Cook for 1-2 more minutes and add butter and salt. 
+    Stir till smooth
+ 5. Transfer to container when cool',
+20, NULL, NULL, FALSE, 1, 2, TRUE, FALSE);
+
+INSERT INTO contains VALUES(10, 'water', 0.5, null, true);
+INSERT INTO contains VALUES(10, 'white sugar', 300, 'g',
+                           false);
+INSERT INTO contains VALUES(10, 'cream', 120, 'g', false);
+INSERT INTO contains VALUES(10, 'unsalted butter', 70, 'g',
+                            false);
+INSERT INTO contains VALUES(10, 'salt', 1, 'tspn', false);
+
+INSERT INTO recipe VALUES(11, 5, 'Chocolate Ganache',
+'1. Heat cream in saucepan until its just boiling
+    at the edges
+ 2. Remove from heat anf pour over the chocolate.
+    Stir until smooth',
+10, NULL, NULL, FALSE, 2, 2, TRUE, FALSE);
+
+INSERT INTO contains VALUES(11, 'cream', 120, 'ml', false);
+INSERT INTO contains VALUES(11, 'dark chocolate', 115, 'g',
+                           false);
+
+INSERT INTO recipe VALUES(12, 5,
+'Salted Caramel Chocolate Tart',
+'1. Prepare the hazlenut crust
+ 2. Prepare the salted caramel
+ 3. Pour caramel into crust and let cool for 3 hours
+ 4. Prepare the chocolate ganache and pour over the
+    top of the caramel
+ 5. Let cool in the refrigerator for 3 hours',
+420, 'Labor intensive but delicious!', NULL, FALSE,
+3, 2, FALSE, FALSE);
+
+INSERT INTO component VALUES(12, 9, 1);
+INSERT INTO component VALUES(12, 10, 2);
+INSERT INTO component VALUES(12, 11, 3);
+
+
+INSERT INTO recipe VALUES(13, 4,
+'Rhubarb Strawberry Pie Filling',
+'Stir together the filling ingredients
+and let sit for 15 minutes to let juices exude',
+10, 'Easy', NULL, FALSE, 1, 2, TRUE, FALSE);
+
+INSERT INTO contains values(13, 'rhubarb', 250,'g',false);
+INSERT INTO contains values(13, 'strawberry', 250,'g',false);
+INSERT INTO contains values(13, 'white sugar',200,'g',false);
+INSERT INTO contains values(13, 'corn starch', 3, 'tbspn',
+                            false);
+INSERT INTO contains values(13, 'cinnamon', 0.125, 'tspn',
+                            false);
+INSERT INTO contains values(13, 'unsalted butter', 1, 'tbspn',
+                            false);
+
+INSERT INTO component VALUES(7,13,2);
+
+INSERT INTO recipe VALUES(14, 3, 'Easy apple cake', 
+'1. Preheat oven to 200C
+ 2. Peel and chop apples,
+ 3. Mix flour, eggs, sugar in a bowl until smooth
+ 4. Fold apples into mixture
+ 5. Bake for 20mins then turn oven down to 160C and
+    bake another 20 minutes',
+60, 'I wouldn\'t recommend this recipe',
+'www.makeupandmacaroons.com', FALSE, 3, 2, TRUE, TRUE);
+
+INSERT INTO contains VALUES(14, 'apple', 3, 'unit(s)', false );
+INSERT INTO contains VALUES(14, 'egg', 3, 'unit(s)', false );
+INSERT INTO contains VALUES(14, 'AP flour', 1, NULL, true);
+INSERT INTO contains VALUES(14, 'brown sugar', 1, NULL, true);
+
+
+INSERT INTO picture VALUES('C:\\Pictures\\watermelon1.jpg', 1, 
+                           NULL);
+INSERT INTO picture VALUES('C:\\Pictures\\baileys.jpg', 2, 
+'Moreish cookies that you can\'t get enough of');
+INSERT INTO picture VALUES('C:\\Pictures\\chocchunkgf.jpg', 3, 
+'Heavily modified recipe that im proud of');
+INSERT INTO picture VALUES('C:\\Pictures\\chunkgfmint.jpg', 3, 
+'Mint leaves make pictures look classy');
+INSERT INTO picture VALUES('C:\\Pictures\\chunkgf2.png',3, 
+'3rd picture because I\'m proud of this recipe');
+INSERT INTO picture VALUES('C:\\Pictures\\OndeX2.jpg', 4,
+                           NULL);
+INSERT INTO picture VALUES('C:\\Pictures\\pbcookie.jpg', 5, 
+'a definite crowd pleaser');
+INSERT INTO picture VALUES('C:\\Pictures\\truffles.jpg', 6, 
+'Rich and chocolatey. What more could you want?' );
+INSERT INTO picture VALUES('C:\\Pictures\\fruitypie.jpg', 7, 
+'Strawberry and rhubarb are a beutiful combination');
+INSERT INTO picture VALUES('C:\\Pictures\\basiccrust.png', 8,
+                          NULL);
+INSERT INTO picture VALUES('C:\\Pictures\\hazelnutcrust.png', 9, 
+'A flavourful pie crust');
+INSERT INTO picture VALUES('C:\\Pictures\\saltedcaramel.png',
+                          10, 'delicious!');
+INSERT INTO picture VALUES('C:\\Pictures\\chocolateganacge.png',
+                          11, NULL);
+INSERT INTO picture VALUES('C:\\Pictures\\choccarameltart.jpg',
+12, 'calorific is the only word to describe this');
+INSERT INTO picture VALUES('C:\\Pictures\\classytart.png', 12,
+'A dollop of cream and a mint leaf equals super classy');
+INSERT INTO picture VALUES('C:\\Pictures\\rhuStrawFilling.jpg',
+13,  'doesn\'t look appetising before cooking');
+INSERT INTO picture VALUES('C:\\Pictures\\applecake.jpg',
+14,'Not so good');
+
+
+INSERT INTO substitution VALUES('baileys', 'frangelico', 2,
+'Substitute an equal amount if you
+ want a more nutty-ish flavor');
+
+INSERT INTO substitution VALUES('baileys', 'rum', 2,
+'The rum will add more of a complex bite/tang
+ than the baileys');
+
+INSERT INTO substitution VALUES('peanut butter', 'hazelnut', 5,
+'Grind the hazelnuts into a butter for a
+ different style of cookie' );
+
+INSERT INTO substitution VALUES('palm sugar', 'brown sugar', 4,
+'If you dont have palm sugar you can 
+easily use brown sugar instead');
+
+INSERT INTO substitution VALUES('baking powder', 'baking soda',
+0, '1 tspn to 1/4 tspn of baking soda
++ 1/2 teaspoon of cream of tar tar');
+
+INSERT INTO substitution VALUES('baking powder',
+'cream of tartar', 0,
+'1 tspn to 1/4 tspn of baking soda 
++ 1/2 teaspoon of cream of tar tar');
+
+INSERT INTO substitution VALUES('cream of tartar', 'lemon', 0,
+'1:1 substitution');
+
+INSERT INTO substitution VALUES('cream', 'whole milk', 0,
+'substitute 1 cup of cream for 210ml mls of whole milk
++ 25g of melted butter');
+
+INSERT INTO substitution VALUES('cream', 'unsalted butter', 0,
+'substitute 1 cup of cream for 210ml mls of whole milk
++ 25g of melted butter');
+
+INSERT INTO substitution VALUES('vanilla pod', 
+'vanilla extract', 0,
+'1/2 a vanilla pod = 1 teaspoon of vanilla extract');
+
+INSERT INTO substitution VALUES('corn starch', 'AP flour', 0,
+'1 tablespoon of cornstarch = 
+ 2 tablespoons of all purpose flour');
+
+
